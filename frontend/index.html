@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KLA Semiconductor Image Restoration</title>
+    <meta name="description" content="DegradationAwareNAFNet - 2x Super-Resolution and Blind Denoising for semiconductor SEM images. PSNR 24.74 dB, 32.4M parameters.">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+    <style>
+        body { background: #0f1117; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; margin: 0; }
+        .card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; }
+        .metric-mono { font-family: 'Courier New', monospace; }
+        .upload-zone {
+            border: 2px dashed #3b82f6; border-radius: 12px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .upload-zone:hover, .upload-zone.drag-over {
+            border-color: #60a5fa; background: rgba(59,130,246,0.06);
+        }
+        .upload-zone.disabled { cursor: not-allowed; opacity: 0.5; }
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white; border: none; border-radius: 10px;
+            padding: 13px 20px; font-weight: 600; font-size: 15px;
+            cursor: pointer; transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(59,130,246,0.35);
+            width: 100%;
+        }
+        .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,0.45); }
+        .btn-primary:disabled {
+            background: #374151; color: #6b7280;
+            box-shadow: none; cursor: not-allowed; transform: none;
+        }
+        .btn-secondary {
+            background: #1a1f2e; color: #e2e8f0;
+            border: 1px solid #2d3748; border-radius: 8px;
+            padding: 10px 16px; font-size: 13px;
+            cursor: pointer; transition: all 0.15s; width: 100%;
+        }
+        .btn-secondary:hover { border-color: #4b5563; background: #232a3b; }
+        .badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 3px 10px; border-radius: 20px; font-size: 12px;
+        }
+        .progress-shimmer {
+            height: 3px; border-radius: 2px;
+            background: linear-gradient(90deg, #3b82f6 0%, #10b981 50%, #3b82f6 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite linear;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .deg-bar-fill { height: 8px; border-radius: 4px; transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
+        .fade-in { animation: fadeIn 0.35s ease-out; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+        .toggle-track {
+            width: 44px; height: 24px; border-radius: 12px;
+            position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+        }
+        .toggle-thumb {
+            width: 18px; height: 18px; border-radius: 50%; background: white;
+            position: absolute; top: 3px; transition: left 0.2s;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 3px solid #1a1f2e; border-top-color: #3b82f6;
+            animation: spin 0.9s linear infinite;
+        }
+        .comparison-wrapper { position: relative; overflow: hidden; border-radius: 8px; user-select: none; }
+        .comparison-divider {
+            position: absolute; top: 0; bottom: 0; width: 2px;
+            background: rgba(255,255,255,0.85);
+            box-shadow: 0 0 10px rgba(255,255,255,0.4);
+            pointer-events: none; z-index: 2;
+        }
+        .comparison-overlay {
+            position: absolute; top: 0; left: 0; height: 100%; overflow: hidden; z-index: 1;
+        }
+        .comparison-handle {
+            position: absolute; bottom: 14px; left: 50%;
+            transform: translateX(-50%);
+            width: 80%; cursor: ew-resize; accent-color: #3b82f6; z-index: 3;
+        }
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px;
+            border-radius: 50%; background: #3b82f6; cursor: ew-resize;
+            border: 2px solid white; margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px;
+        }
+        .arch-tile {
+            background: #151928; border: 1px solid #2d3748; border-radius: 8px;
+            padding: 12px; transition: border-color 0.2s;
+        }
+        .arch-tile:hover { border-color: #4b5563; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        /* ------------------------------------------------------------------ */
+        /* StatusDot                                                           */
+        /* ------------------------------------------------------------------ */
+        function StatusDot({ status }) {
+            const cfg = {
+                checking: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Connecting...' },
+                ready:    { color: '#10b981', bg: 'rgba(16,185,129,0.12)', label: 'Model Ready' },
+                error:    { color: '#ef4444', bg: 'rgba(239,68,68,0.12)',  label: 'Backend Offline' }
+            }[status] || { color: '#6b7280', bg: 'rgba(107,114,128,0.12)', label: 'Unknown' };
+
+            return (
+                <div className="badge" style={{ background: cfg.bg, color: cfg.color }}>
+                    <span style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: cfg.color, display: 'inline-block',
+                        boxShadow: `0 0 6px ${cfg.color}`
+                    }}></span>
+                    {cfg.label}
+                </div>
+            );
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* MetricCard                                                          */
+        /* ------------------------------------------------------------------ */
+        function MetricCard({ label, value, unit, color, sublabel }) {
+            return (
+                <div className="card p-5">
+                    <div style={{ color: '#9ca3af', fontSize: 12, fontWeight: 500, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+                    <div className="metric-mono" style={{ fontSize: 32, fontWeight: 700, color: color, lineHeight: 1.1 }}>
+                        {value}
+                        {unit && <span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4, color: '#9ca3af' }}>{unit}</span>}
+                    </div>
+                    {sublabel && <div style={{ color: '#6b7280', fontSize: 11, marginTop: 6 }}>{sublabel}</div>}
+                </div>
+            );
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* DegBar                                                              */
+        /* ------------------------------------------------------------------ */
+        function DegBar({ label, value, color }) {
+            const pct = Math.round(value * 100);
+            return (
+                <div style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: '#9ca3af' }}>{label}</span>
+                        <span className="metric-mono" style={{ color: color }}>{pct}%</span>
+                    </div>
+                    <div style={{ background: '#151928', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                        <div className="deg-bar-fill" style={{ width: `${pct}%`, background: color }}></div>
+                    </div>
+                </div>
+            );
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* ComparisonSlider                                                    */
+        /* ------------------------------------------------------------------ */
+        function ComparisonSlider({ lrSrc, restoredSrc }) {
+            const [pos, setPos] = useState(50);
+            const wrapperRef = useRef(null);
+
+            const handleSlider = useCallback((e) => {
+                setPos(Number(e.target.value));
+            }, []);
+
+            return (
+                <div>
+                    <div className="comparison-wrapper" ref={wrapperRef} style={{ height: 256, background: '#0f1117' }}>
+                        {/* Restored (full background) */}
+                        <img src={restoredSrc} alt="Restored" style={{
+                            width: '100%', height: 256, objectFit: 'contain',
+                            imageRendering: 'pixelated', display: 'block'
+                        }} />
+                        {/* NoisyLR overlay clipped */}
+                        <div className="comparison-overlay" style={{ width: `${pos}%` }}>
+                            <img src={lrSrc} alt="NoisyLR" style={{
+                                width: wrapperRef.current ? wrapperRef.current.offsetWidth : '100%',
+                                height: 256, objectFit: 'contain',
+                                imageRendering: 'pixelated', display: 'block',
+                                minWidth: wrapperRef.current ? wrapperRef.current.offsetWidth : '100%'
+                            }} />
+                        </div>
+                        {/* Divider line */}
+                        <div className="comparison-divider" style={{ left: `${pos}%` }}></div>
+                        {/* Labels */}
+                        <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 4 }}>
+                            <span className="badge" style={{ background: 'rgba(59,130,246,0.8)', color: 'white', fontSize: 11 }}>NoisyLR Input</span>
+                        </div>
+                        <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 4 }}>
+                            <span className="badge" style={{ background: 'rgba(16,185,129,0.8)', color: 'white', fontSize: 11 }}>Restored Output</span>
+                        </div>
+                        {/* Range slider */}
+                        <input
+                            type="range" min="0" max="100" value={pos}
+                            onChange={handleSlider}
+                            className="comparison-handle"
+                            style={{ position: 'absolute', bottom: 14, left: '10%', width: '80%', zIndex: 5 }}
+                        />
+                    </div>
+                </div>
+            );
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* UploadZone                                                          */
+        /* ------------------------------------------------------------------ */
+        function UploadZone({ onFileSelect, disabled, selectedFile }) {
+            const [dragOver, setDragOver] = useState(false);
+            const inputRef = useRef(null);
+
+            const handleDrop = useCallback((e) => {
+                e.preventDefault();
+                setDragOver(false);
+                if (disabled) return;
+                const f = e.dataTransfer.files[0];
+                if (f && f.name.endsWith('.npy')) onFileSelect(f);
+            }, [disabled, onFileSelect]);
+
+            const handleDragOver = useCallback((e) => {
+                e.preventDefault();
+                if (!disabled) setDragOver(true);
+            }, [disabled]);
+
+            const handleDragLeave = useCallback(() => setDragOver(false), []);
+
+            const handleClick = useCallback(() => {
+                if (!disabled && inputRef.current) inputRef.current.click();
+            }, [disabled]);
+
+            const handleChange = useCallback((e) => {
+                const f = e.target.files[0];
+                if (f) onFileSelect(f);
+            }, [onFileSelect]);
+
+            const cls = `upload-zone ${dragOver ? 'drag-over' : ''} ${disabled ? 'disabled' : ''}`;
+
+            return (
+                <div
+                    className={cls}
+                    onClick={handleClick}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    style={{ padding: 24, textAlign: 'center' }}
+                >
+                    <input ref={inputRef} type="file" accept=".npy" onChange={handleChange} style={{ display: 'none' }} />
+                    {selectedFile ? (
+                        <div className="fade-in">
+                            <div style={{ fontSize: 28, marginBottom: 6 }}>&#128206;</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0' }}>{selectedFile.name}</div>
+                            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{(selectedFile.size / 1024).toFixed(1)} KB</div>
+                        </div>
+                    ) : (
+                        <div>
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.5" style={{ margin: '0 auto 8px' }}>
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            <div style={{ fontSize: 14, color: '#9ca3af' }}>Drop .npy file here or click to browse</div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* App                                                                 */
+        /* ------------------------------------------------------------------ */
+        function App() {
+            const [backendStatus, setBackendStatus] = useState('checking');
+            const [deviceInfo, setDeviceInfo] = useState(null);
+            const [selectedFile, setSelectedFile] = useState(null);
+            const [useTTA, setUseTTA] = useState(false);
+            const [loading, setLoading] = useState(false);
+            const [result, setResult] = useState(null);
+            const [error, setError] = useState(null);
+            const [activeTab, setActiveTab] = useState('comparison');
+
+            // Health polling
+            useEffect(() => {
+                const check = () => {
+                    fetch('/api/health')
+                        .then(r => r.json())
+                        .then(d => { setBackendStatus('ready'); setDeviceInfo(d); })
+                        .catch(() => setBackendStatus('error'));
+                };
+                check();
+                const iv = setInterval(check, 10000);
+                return () => clearInterval(iv);
+            }, []);
+
+            // Restore handler
+            const handleRestore = useCallback(async () => {
+                if (!selectedFile) return;
+                setLoading(true);
+                setError(null);
+                setResult(null);
+                try {
+                    const fd = new FormData();
+                    fd.append('file', selectedFile);
+                    fd.append('use_tta', useTTA ? 'true' : 'false');
+                    const resp = await fetch('/api/restore', { method: 'POST', body: fd });
+                    const data = await resp.json();
+                    if (!resp.ok) throw new Error(data.detail || 'Inference failed');
+                    setResult(data);
+                    setActiveTab('comparison');
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            }, [selectedFile, useTTA]);
+
+            return (
+                <div style={{ maxWidth: 1200, margin: '0 auto', padding: 24 }}>
+
+                    {/* ============ HEADER ============ */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
+                        <div>
+                            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.01em' }}>KLA Semiconductor Image Restoration</h1>
+                            <p style={{ color: '#9ca3af', fontSize: 13, margin: '4px 0 10px' }}>DegradationAwareNAFNet &mdash; 2x Super-Resolution + Blind Denoising</p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                <span className="badge" style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa' }}>PSNR 24.74 dB</span>
+                                <span className="badge" style={{ background: 'rgba(16,185,129,0.12)', color: '#34d399' }}>SSIM 0.697</span>
+                                <span className="badge" style={{ background: 'rgba(245,158,11,0.12)', color: '#fbbf24' }}>LPIPS 0.376</span>
+                                <span className="badge" style={{ background: 'rgba(139,92,246,0.12)', color: '#a78bfa' }}>32.4M params</span>
+                                <span className="badge" style={{ background: 'rgba(107,114,128,0.12)', color: '#9ca3af' }}>Epoch 246</span>
+                                <span className="badge" style={{ background: 'rgba(16,185,129,0.12)', color: '#34d399' }}>+1.59 dB vs bicubic</span>
+                            </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                            <StatusDot status={backendStatus} />
+                            {deviceInfo && (
+                                <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>
+                                    {deviceInfo.device_name}<br/>
+                                    VRAM {deviceInfo.vram_used_mb} / {deviceInfo.vram_total_mb} MB
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ============ METRIC CARDS ============ */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
+                        <MetricCard label="PSNR" value="24.74" unit="dB" color="#3b82f6" sublabel="val set, 320 images" />
+                        <MetricCard label="SSIM" value="0.6971" unit="" color="#10b981" sublabel="structural similarity" />
+                        <MetricCard label="LPIPS" value="0.3760" unit="" color="#f59e0b" sublabel="perceptual (lower=better)" />
+                    </div>
+
+                    {/* ============ MAIN GRID ============ */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr', gap: 20, marginBottom: 24 }}>
+
+                        {/* ---- LEFT COLUMN ---- */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {/* Upload */}
+                            <div className="card p-4">
+                                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#e2e8f0' }}>Input Image</div>
+                                <UploadZone onFileSelect={setSelectedFile} disabled={loading} selectedFile={selectedFile} />
+                            </div>
+
+                            {/* Inference Settings */}
+                            <div className="card p-4">
+                                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#e2e8f0' }}>Inference Settings</div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                    <div>
+                                        <div style={{ fontSize: 13, color: '#e2e8f0' }}>Test-Time Augmentation (TTA)</div>
+                                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                                            {useTTA
+                                                ? 'TTA x8 -- +0.3-0.5 dB PSNR, 8x slower'
+                                                : 'Batch mode -- fast (default for KLA evaluation)'}
+                                        </div>
+                                    </div>
+                                    <div
+                                        className="toggle-track"
+                                        style={{ background: useTTA ? '#3b82f6' : '#374151' }}
+                                        onClick={() => setUseTTA(v => !v)}
+                                    >
+                                        <div className="toggle-thumb" style={{ left: useTTA ? 23 : 3 }}></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Restore Button */}
+                            <button
+                                className="btn-primary"
+                                disabled={!selectedFile || loading}
+                                onClick={handleRestore}
+                            >
+                                {loading ? 'Running...' : 'Restore Image'}
+                            </button>
+
+                            {/* Progress shimmer */}
+                            {loading && <div className="progress-shimmer"></div>}
+
+                            {/* Error */}
+                            {error && (
+                                <div className="fade-in" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: 12, fontSize: 13, color: '#fca5a5' }}>
+                                    {error}
+                                </div>
+                            )}
+
+
+                        </div>
+
+                        {/* ---- RIGHT COLUMN ---- */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                            {/* Empty state */}
+                            {!result && !loading && (
+                                <div className="card fade-in" style={{ minHeight: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                                    <div style={{ fontSize: 48, marginBottom: 16 }}>&#128300;</div>
+                                    <div style={{ fontSize: 15, color: '#9ca3af', textAlign: 'center' }}>Upload a NoisyLR .npy file and click Restore</div>
+                                </div>
+                            )}
+
+                            {/* Loading state */}
+                            {loading && (
+                                <div className="card" style={{ minHeight: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                                    <div className="spinner" style={{ marginBottom: 20 }}></div>
+                                    <div style={{ fontSize: 14, color: '#9ca3af' }}>
+                                        {useTTA ? 'Running TTA x8 (8 passes)...' : 'Running inference...'}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Result */}
+                            {result && (
+                                <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    {/* Timing badges */}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        <span className="badge metric-mono" style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa' }}>{result.elapsed_ms} ms</span>
+                                        <span className="badge" style={{ background: 'rgba(139,92,246,0.12)', color: '#a78bfa' }}>{result.mode}</span>
+                                        <span className="badge" style={{ background: 'rgba(16,185,129,0.12)', color: '#34d399' }}>{result.diff_mean_pct}% pixels modified</span>
+                                    </div>
+
+                                    {/* Tab switcher */}
+                                    <div style={{ display: 'flex', gap: 0, background: '#151928', borderRadius: 8, padding: 3 }}>
+                                        <button
+                                            onClick={() => setActiveTab('comparison')}
+                                            style={{
+                                                flex: 1, padding: '8px 12px', border: 'none', borderRadius: 6,
+                                                fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+                                                background: activeTab === 'comparison' ? '#1a1f2e' : 'transparent',
+                                                color: activeTab === 'comparison' ? '#e2e8f0' : '#6b7280'
+                                            }}
+                                        >Comparison Slider</button>
+                                        <button
+                                            onClick={() => setActiveTab('sidebyside')}
+                                            style={{
+                                                flex: 1, padding: '8px 12px', border: 'none', borderRadius: 6,
+                                                fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+                                                background: activeTab === 'sidebyside' ? '#1a1f2e' : 'transparent',
+                                                color: activeTab === 'sidebyside' ? '#e2e8f0' : '#6b7280'
+                                            }}
+                                        >Side by Side</button>
+                                    </div>
+
+                                    {/* Comparison or Side by Side */}
+                                    {activeTab === 'comparison' ? (
+                                        <ComparisonSlider lrSrc={result.lr_image} restoredSrc={result.restored_image} />
+                                    ) : (
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                            <div>
+                                                <img src={result.lr_image} alt="NoisyLR" style={{
+                                                    width: '100%', height: 256, objectFit: 'contain',
+                                                    imageRendering: 'pixelated', border: '1px solid #2d3748', borderRadius: 8
+                                                }} />
+                                                <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 6 }}>NoisyLR Input (128x128, bicubic for display)</div>
+                                            </div>
+                                            <div>
+                                                <img src={result.restored_image} alt="Restored" style={{
+                                                    width: '100%', height: 256, objectFit: 'contain',
+                                                    imageRendering: 'pixelated', border: '1px solid #2d3748', borderRadius: 8
+                                                }} />
+                                                <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 6 }}>Restored Output (256x256)</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Download */}
+                                    <button className="btn-secondary" onClick={() => { window.location.href = '/api/download'; }}>
+                                        Download Restored .npy
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Architecture card */}
+                            <div className="card p-4">
+                                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: '#e2e8f0' }}>Architecture</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                    <div className="arch-tile">
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b' }}>DegradationHead</div>
+                                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>FiLM conditioning, blind degradation</div>
+                                    </div>
+                                    <div className="arch-tile">
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: '#3b82f6' }}>NAFNet Backbone</div>
+                                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>width=64, enc=[2,2,4,8], middle=6</div>
+                                    </div>
+                                    <div className="arch-tile">
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: '#10b981' }}>PixelShuffle 2x</div>
+                                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>Sub-pixel SR, 128&rarr;256</div>
+                                    </div>
+                                    <div className="arch-tile">
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: '#8b5cf6' }}>Composite Loss</div>
+                                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>Charb 0.6 + FFT 0.2 + SSIM 0.2</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ============ COMPARISON NOTE ============ */}
+                    {result && (
+                        <div className="fade-in" style={{
+                            background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)',
+                            borderRadius: 8, padding: '10px 16px', marginBottom: 24,
+                            fontSize: 13, color: '#9ca3af', textAlign: 'center'
+                        }}>
+                            Bicubic baseline: <span className="metric-mono" style={{ color: '#6b7280' }}>PSNR 23.15 dB</span>
+                            &nbsp;|&nbsp; Your model: <span className="metric-mono" style={{ color: '#10b981' }}>PSNR 24.74 dB</span>
+                            &nbsp;|&nbsp; Gain: <span className="metric-mono" style={{ color: '#34d399' }}>+1.59 dB</span>
+                        </div>
+                    )}
+
+                    {/* ============ FOOTER ============ */}
+                    <div style={{ textAlign: 'center', padding: '16px 0', borderTop: '1px solid #1a1f2e' }}>
+                        <div style={{ fontSize: 11, color: '#4b5563' }}>
+                            KLA / Semicon India Hackathon 2026 &mdash; DegradationAwareNAFNet &mdash; RGIPT &mdash; PSNR 24.74 dB &mdash; 246 epochs &mdash; RTX 4060 Laptop
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
