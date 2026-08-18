@@ -173,6 +173,8 @@ python train.py --resume weights/best_model.pth --epochs 300
 
 Project: `kla-image-restoration`
 
+**Full wandb Report**: [View Training Dashboard](https://api.wandb.ai/links/drxqant-rajiv-gandhi-institute-of-petroleum-technology/054x98ki)
+
 ---
 
 ## Inference (KLA Submission Format)
