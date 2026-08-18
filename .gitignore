@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.env
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Experiment tracking
+wandb/
+
+# Training/test data (DO NOT upload to GitHub)
+GT/
+NoisyLR/
+test_NoisyLR/
+
+# Large result files (npy outputs)
+results/test_submission_output/
+results/inference_smoke_test/
+results/sanity_check/
+results/run_py_smoke_test/
+
+# OS files
+Thumbs.db
+.DS_Store
+__MACOSX/
+
+# Miniconda installer
+miniconda.exe
+
+# Checkpoint files (only keep best_model.pth)
+weights/checkpoint_*.pth
+
+weights/*.pth
