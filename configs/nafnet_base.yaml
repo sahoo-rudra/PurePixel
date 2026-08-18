@@ -1,0 +1,48 @@
+model:
+  name: DegradationAwareNAFNet
+  img_channel: 1
+  width: 64
+  enc_blks: [2, 2, 4, 8]
+  dec_blks: [2, 2, 2, 2]
+  middle_blk_num: 6
+  embed_dim: 64
+
+train:
+  batch_size: 16
+  accumulation_steps: 2
+  patch_size: 128
+  num_epochs: 200
+  lr: 0.0003
+  T_0: 50
+  T_mult: 1
+  eta_min: 0.000001
+  lr_scheduler: CosineAnnealingWarmRestarts
+  seed: 42
+  save_dir: weights
+  val_every_n_epochs: 1
+  save_every_n_epochs: 10
+  early_stop_patience: 30
+  log_images_every: 10
+  grad_clip_norm: 1.0
+
+loss:
+  charbonnier_weight: 0.6
+  ssim_weight: 0.2
+  fft_weight: 0.2
+  charbonnier_eps: 0.001
+
+data:
+  gt_folder: ../GT
+  noisylr_folder: ../NoisyLR
+  val_split: 0.1
+  num_workers: 0
+
+wandb:
+  project: kla-image-restoration
+  entity: null
+
+device:
+  use_cuda: true
+  cuda_device_id: 0
+  mixed_precision: true
+  benchmark: true
