@@ -212,28 +212,6 @@ Also supports (256, 256) input â†’ (512, 512) output automatically.
 
 ---
 
-## Demo
-
-### Gradio Demo
-
-```bash
-pip install gradio
-python app.py
-```
-
-Open: http://127.0.0.1:7860
-
-### React Web Demo
-
-```bash
-pip install fastapi uvicorn python-multipart pillow
-python backend.py
-```
-
-Open: http://127.0.0.1:8000
-
----
-
 ## Validation and Reporting
 
 ### Validation Split
