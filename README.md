@@ -124,7 +124,7 @@ pip install -r requirements.txt
 
 `best_model.pth` (~390 MB) is not tracked in git due to file size limits.
 
-**Download**: [GitHub Release v1.0](https://github.com/sahoo-rudra/PurePixel/releases/download/v1.0/best_model.pth)
+**Download**: [Hugging Face model repository](https://huggingface.co/sahoo-rudra/PurePixel/resolve/main/best_model.pth)
 
 Place the file at:
 
