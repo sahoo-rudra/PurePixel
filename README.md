@@ -333,16 +333,4 @@ Images with mean intensity ~0.06 are restored correctly (visually clean output, 
 
 ---
 
-## Next Steps
-
-If given more time:
-
-- **External data for OOD generalisation**: Add BSD500 + DIV2K datasets (+0.3â€“0.8 dB expected improvement)
-- **Pretrained initialisation**: Use official NAFNet ImageNet-pretrained weights as starting point
-- **Full Fix1 training**: Train FFT=0.35 config for 200+ epochs (reverted at 80 epochs due to time)
-- **Multi-seed ensemble**: Train 3 seeds and average predictions for +0.1â€“0.2 dB
-- **Model distillation**: Compress to a smaller model for faster H100 throughput
-
----
-
-Built for KLA / Semicon India Hackathon 2026 â€” RGIPT team.
+Built for KLA / Semicon India Hackathon 2026
