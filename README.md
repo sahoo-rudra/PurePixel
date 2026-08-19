@@ -1,4 +1,4 @@
-# KLA Semiconductor Image Restoration -- DegradationAwareNAFNet -- PurePixel
+# KLA Semiconductor Image Restoration -- DegradationAwareNAFNet - PurePixel
 
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue) ![PyTorch 2.5.1](https://img.shields.io/badge/PyTorch-2.5.1-ee4c2c) ![CUDA 12.1](https://img.shields.io/badge/CUDA-12.1-76b900) ![License MIT](https://img.shields.io/badge/License-MIT-green)
 
@@ -223,16 +223,12 @@ pip install gradio
 python app.py
 ```
 
-Open: http://127.0.0.1:7860
-
 ### React Web Demo
 
 ```bash
 pip install fastapi uvicorn python-multipart pillow
 python backend.py
 ```
-
-Open: http://127.0.0.1:8000
 
 ---
 
@@ -335,16 +331,4 @@ Images with mean intensity ~0.06 are restored correctly (visually clean output, 
 
 ---
 
-## Next Steps
-
-If given more time:
-
-- **External data for OOD generalisation**: Add BSD500 + DIV2K datasets (+0.3-0.8 dB expected improvement)
-- **Pretrained initialisation**: Use official NAFNet ImageNet-pretrained weights as starting point
-- **Full Fix1 training**: Train FFT=0.35 config for 200+ epochs (reverted at 80 epochs due to time)
-- **Multi-seed ensemble**: Train 3 seeds and average predictions for +0.1-0.2 dB
-- **Model distillation**: Compress to a smaller model for faster H100 throughput
-
----
-
-Built for KLA / Semicon India Hackathon 2026 -- RGIPT team.
+Built for KLA / Semicon India Hackathon 2026
