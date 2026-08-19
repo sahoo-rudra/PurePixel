@@ -1,4 +1,4 @@
-# KLA Semiconductor Image Restoration -- DegradationAwareNAFNet - PurePixel
+# Semiconductor Image Restoration -- DegradationAwareNAFNet - PurePixel
 
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue) ![PyTorch 2.5.1](https://img.shields.io/badge/PyTorch-2.5.1-ee4c2c) ![CUDA 12.1](https://img.shields.io/badge/CUDA-12.1-76b900) ![License MIT](https://img.shields.io/badge/License-MIT-green)
 
